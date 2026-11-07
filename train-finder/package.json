@@ -1,0 +1,17 @@
+{
+  "name": "train-finder",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test",
+    "start": "node api.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "csv-parse": "^7.0.3"
+  }
+}
