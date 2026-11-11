@@ -1,0 +1,9 @@
+{
+  "name": "train-finder-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "csv-parse": "^7.0.3"
+  }
+}
