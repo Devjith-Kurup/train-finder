@@ -295,7 +295,15 @@ function widgetQueryBody(url, selectStation) {
     maxTransfers: query.has("maxTransfers") ? Number(query.get("maxTransfers")) : 2
   };
   const origin = query.get("origin") ?? query.get("originStationCode");
-  if (origin !== null) body.originStationCode = origin;
+  if (origin !== null) {
+    body.originStationCode = origin;
+  } else if (query.has("lat") && query.has("lon")) {
+    body.originCoordinates = {
+      latitude: query.get("lat"),
+      longitude: query.get("lon")
+    };
+    if (query.has("radiusKm")) body.originRadiusKm = Number(query.get("radiusKm"));
+  }
   for (const name of ["minimumTransferBufferMinutes", "maximumInterchangeWaitMinutes"]) {
     if (query.has(name)) body[name] = Number(query.get(name));
   }
