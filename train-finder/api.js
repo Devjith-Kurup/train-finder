@@ -353,7 +353,7 @@ function toAtDestinationPayload(origin) {
     departureTime: null,
     arrivalTime: null,
     totalElapsedMinutes: null,
-    transfers: null,
+    transfers: 0,
     display: {
       header: `At ${home.name}`,
       departure: "",
@@ -407,7 +407,7 @@ function toWidgetPayload(recommendation) {
     departureTime: recommendation.legs[0]?.departureTime ?? null,
     arrivalTime: recommendation.arrivalTime,
     totalElapsedMinutes: recommendation.totalElapsedMinutes,
-    transfers: recommendation.transfers,
+    transfers: recommendation.transfers ?? 0,
     display: {
       header: `${recommendation.origin.code} --> ${recommendation.selectedStation.code}`,
       departure: clockOf(recommendation.legs[0]?.departureTime),
