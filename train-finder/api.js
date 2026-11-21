@@ -274,6 +274,64 @@ function recommend(data, body, destinationOverride) {
   return toApiRecommendation(recommendation, origin);
 }
 
+function currentIstDateTime() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date());
+  const get = type => parts.find(part => part.type === type).value;
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+function widgetQueryBody(url, selectStation) {
+  const query = url.searchParams;
+  const body = {
+    departureDateTime: query.get("departure") || currentIstDateTime(),
+    maxTransfers: query.has("maxTransfers") ? Number(query.get("maxTransfers")) : 2
+  };
+  const origin = query.get("origin") ?? query.get("originStationCode");
+  if (origin !== null) body.originStationCode = origin;
+  for (const name of ["minimumTransferBufferMinutes", "maximumInterchangeWaitMinutes"]) {
+    if (query.has(name)) body[name] = Number(query.get(name));
+  }
+  if (query.has("earlierArrivalThresholdMinutes")) {
+    body.earlierArrivalThresholdMinutes = Number(query.get("earlierArrivalThresholdMinutes"));
+  }
+  const destination = query.get("destination");
+  if (selectStation) {
+    const current = query.get("current") ?? destination;
+    if (current !== null) body.currentDestinationCode = current;
+  } else if (destination !== null) {
+    body.manualDestinationCode = destination;
+  }
+  return body;
+}
+
+function clockOf(dateTime) {
+  return typeof dateTime === "string" && dateTime.length >= 16
+    ? dateTime.slice(11, 16)
+    : "";
+}
+
+function titleCase(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/\b[a-z]/g, letter => letter.toUpperCase());
+}
+
+function formatDuration(minutes) {
+  if (!Number.isFinite(minutes)) return "";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}m`;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
 function toWidgetPayload(recommendation) {
   const nextStation = getHomeDestinationCycle(
     recommendation.selectedStation.code
@@ -296,7 +354,8 @@ function toWidgetPayload(recommendation) {
         interchange: {
           station: recommendation.legs[index - 1].getDownAt,
           waitMinutes: leg.interchange?.waitMinutes ?? null
-        }
+        },
+        transferText: `Transfer at ${titleCase(recommendation.legs[index - 1].getDownAt.name)} (${recommendation.legs[index - 1].getDownAt.code})`
       }
       : {})
   }));
@@ -306,6 +365,22 @@ function toWidgetPayload(recommendation) {
     selectedStation: recommendation.selectedStation,
     stationCycleButton: { nextStation },
     routeAvailable: legs.length > 0,
+    origin: { code: recommendation.origin.code, name: recommendation.origin.name },
+    departureTime: recommendation.legs[0]?.departureTime ?? null,
+    arrivalTime: recommendation.arrivalTime,
+    totalElapsedMinutes: recommendation.totalElapsedMinutes,
+    transfers: recommendation.transfers,
+    display: {
+      header: `${recommendation.origin.code} --> ${recommendation.selectedStation.code}`,
+      departure: clockOf(recommendation.legs[0]?.departureTime),
+      arrival: clockOf(recommendation.arrivalTime),
+      duration: formatDuration(recommendation.totalElapsedMinutes),
+      transferLabel: recommendation.transfers === null
+        ? "No route"
+        : recommendation.transfers === 0
+          ? "Direct"
+          : `${recommendation.transfers} Transfer${recommendation.transfers > 1 ? "s" : ""}`
+    },
     legs,
     dataFreshness: {
       source: "static-schedule-dataset",
@@ -363,14 +438,20 @@ function createRequestHandler(data = loadData()) {
         return;
       }
 
+      const isWidgetGet = request.method === "GET" &&
+        (url.pathname === "/api/widget/recommend" ||
+          url.pathname === "/api/widget/select-station");
       if (
-        request.method === "POST" &&
-        (url.pathname === "/api/route/recommend" ||
-          url.pathname === "/api/route/select-station" ||
-          url.pathname === "/api/widget/recommend" ||
-          url.pathname === "/api/widget/select-station")
+        isWidgetGet ||
+        (request.method === "POST" &&
+          (url.pathname === "/api/route/recommend" ||
+            url.pathname === "/api/route/select-station" ||
+            url.pathname === "/api/widget/recommend" ||
+            url.pathname === "/api/widget/select-station"))
       ) {
-        const body = await readJsonBody(request);
+        const body = isWidgetGet
+          ? widgetQueryBody(url, url.pathname === "/api/widget/select-station")
+          : await readJsonBody(request);
         let result;
         const isWidgetRequest = url.pathname.startsWith("/api/widget/");
         if (
