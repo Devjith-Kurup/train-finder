@@ -3,6 +3,7 @@ const { URL } = require("node:url");
 const { loadData, normalizeCode } = require("./data");
 const { findNearbyStations } = require("./nearby-stations");
 const {
+  HOME_DESTINATIONS,
   getHomeDestinationCycle,
   getHomeDestinationRecommendation
 } = require("./home-destination");
@@ -340,6 +341,35 @@ function formatDuration(minutes) {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
+function toAtDestinationPayload(origin) {
+  const home = HOME_DESTINATIONS.find(destination => destination.code === origin.station.code);
+  return {
+    schemaVersion: "1.0",
+    atDestination: true,
+    selectedStation: { ...home },
+    stationCycleButton: { nextStation: getHomeDestinationCycle(home.code) },
+    routeAvailable: false,
+    origin: { code: origin.station.code, name: origin.station.name },
+    departureTime: null,
+    arrivalTime: null,
+    totalElapsedMinutes: null,
+    transfers: null,
+    display: {
+      header: `At ${home.name}`,
+      departure: "",
+      arrival: "",
+      duration: "",
+      transferLabel: "You're here"
+    },
+    legs: [],
+    dataFreshness: {
+      source: "static-schedule-dataset",
+      freshness: "update-time-unavailable",
+      liveRunningData: false
+    }
+  };
+}
+
 function toWidgetPayload(recommendation) {
   const nextStation = getHomeDestinationCycle(
     recommendation.selectedStation.code
@@ -462,6 +492,14 @@ function createRequestHandler(data = loadData()) {
           : await readJsonBody(request);
         let result;
         const isWidgetRequest = url.pathname.startsWith("/api/widget/");
+        if (isWidgetRequest) {
+          validateRecommendationFields(body);
+          const resolvedOrigin = resolveOrigin(data, body);
+          if (DESTINATION_CODES.has(resolvedOrigin.station.code)) {
+            sendJson(response, 200, toAtDestinationPayload(resolvedOrigin));
+            return;
+          }
+        }
         if (
           url.pathname === "/api/route/recommend" ||
           url.pathname === "/api/widget/recommend"
