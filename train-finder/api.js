@@ -341,6 +341,27 @@ function formatDuration(minutes) {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
+const SHORT_STATION_NAMES = {
+  CSMT: "CSMT",
+  LTT: "LTT",
+  CCG: "Churchgate",
+  MMCT: "Mumbai Central",
+  BCL: "Mumbai Central",
+  DDR: "Dadar",
+  DIVA: "Diva",
+  KYN: "Kalyan"
+};
+
+function trainLabel(leg) {
+  const suffixMatch = /\b(MEMU|EMU|DMU|PASSENGER|PASS)\s*$/i.exec(String(leg.trainName ?? ""));
+  const suffix = suffixMatch
+    ? (/^pass/i.test(suffixMatch[1]) ? "Passenger" : suffixMatch[1].toUpperCase())
+    : "";
+  const from = SHORT_STATION_NAMES[leg.trainSourceCode] || titleCase(leg.trainSource);
+  const to = SHORT_STATION_NAMES[leg.trainDestinationCode] || titleCase(leg.trainDestination);
+  return `${from} - ${to}${suffix ? ` ${suffix}` : ""}`;
+}
+
 function toAtDestinationPayload(origin) {
   const home = HOME_DESTINATIONS.find(destination => destination.code === origin.station.code);
   return {
@@ -377,6 +398,9 @@ function toWidgetPayload(recommendation) {
   const legs = recommendation.legs.map((leg, index) => ({
     trainNumber: leg.trainNumber,
     trainName: leg.trainName,
+    trainLabel: trainLabel(leg),
+    departureClock: clockOf(leg.departureTime),
+    arrivalClock: clockOf(leg.arrivalTime),
     train: {
       source: leg.trainSource,
       sourceCode: leg.trainSourceCode,
@@ -584,26 +608,4 @@ function createRequestHandler(data = loadData()) {
 }
 
 function createApiServer(options = {}) {
-  const data = options.data || loadData();
-  return http.createServer(createRequestHandler(data));
-}
-
-if (require.main === module) {
-  const port = Number(process.env.PORT || DEFAULT_PORT);
-  if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
-    throw new RangeError("PORT must be an integer from 0 to 65535");
-  }
-  const host = process.env.HOST || DEFAULT_HOST;
-  const server = createApiServer();
-  server.listen(port, host, () => {
-    const address = server.address();
-    console.log(`Train Finder API listening at http://${host}:${address.port}`);
-  });
-}
-
-module.exports = {
-  DEFAULT_HOST,
-  DEFAULT_PORT,
-  createApiServer,
-  createRequestHandler
-};
+  const data = options.data
