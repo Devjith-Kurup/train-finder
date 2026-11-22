@@ -539,28 +539,63 @@ function createDataLayer(records, parserIssues = {}) {
   };
 }
 
-function loadData(dataDir = DATA_DIR) {
-  const parserResults = {};
-  const records = {};
-  for (const [name, schema] of Object.entries(SCHEMAS)) {
-    const useEnrichedStations = name === "stations" &&
-      dataDir === DATA_DIR &&
-      fs.existsSync(path.join(ENRICHED_DATA_DIR, ENRICHED_STATIONS_FILE));
-    const file = useEnrichedStations
-      ? readCSV(ENRICHED_DATA_DIR, ENRICHED_STATIONS_FILE, schema)
-      : readCSV(dataDir, `${name}.csv`, schema);
-    records[name] = file.records;
-    parserResults[name] = file.malformedRows;
-  }
-  return createDataLayer(records, parserResults);
+// Approximate coordinates for Mumbai stations the enriched dataset has no
+// coordinates for. Only used when the dataset value is missing.
+const MUMBAI_STATION_COORDINATES = {
+  PNVL: [18.9894, 73.1175],
+  KLMG: [19.0267, 73.1052],
+  MMCT: [18.9696, 72.8193],
+  BCL: [18.9696, 72.8193],
+  DDR: [19.0186, 72.8426],
+  CCG: [18.9322, 72.8264],
+  SION: [19.0390, 72.8619],
+  VDLR: [19.0166, 72.8596],
+  SWDK: [19.0189, 73.0190],
+  KHAG: [19.0249, 73.0647],
+  DIGH: [19.1693, 72.9996]
+};
+
+function withMumbaiStationCoordinates(stations) {
+  return stations.map(station => {
+    const code = normalizeCode(station.code);
+    const coordinates = MUMBAI_STATION_COORDINATES[code];
+    if (!coordinates || (numericOrNull(station.lat) !== null && numericOrNull(station.lon) !== null)) {
+      return station;
+    }
+    return { ...station, lat: String(coordinates[0]), lon: String(coordinates[1]) };
+  });
 }
 
-module.exports = {
-  DATA_DIR,
-  createDataLayer,
-  loadData,
-  normalizeCode,
-  normalizeTrainNumber,
-  timeToMinutes,
-  getStopTime
-};
+// Mumbai Metropolitan Region box (Churchgate to Virar, Karjat/Khopoli, Roha).
+const MUMBAI_REGION = { minLat: 18.40, maxLat: 19.55, minLon: 72.75, maxLon: 73.60 };
+// Local-service train types only: no Mail/Express, Superfast, Vande Bharat etc.
+const LOCAL_TRAIN_TYPES = new Set(["SUB", "MEMU", "EMU", "DMU", "PAS"]);
+
+function inMumbaiRegion(station) {
+  return station &&
+    station.lat !== null && station.lon !== null &&
+    station.lat >= MUMBAI_REGION.minLat && station.lat <= MUMBAI_REGION.maxLat &&
+    station.lon >= MUMBAI_REGION.minLon && station.lon <= MUMBAI_REGION.maxLon;
+}
+
+// Keeps only local-type trains and only the part of each route inside Mumbai.
+function restrictToMumbaiLocals(records) {
+  const stationByCode = new Map();
+  for (const station of records.stations) {
+    const lat = numericOrNull(station.lat);
+    const lon = numericOrNull(station.lon);
+    stationByCode.set(normalizeCode(station.code), { lat, lon });
+  }
+
+  const stopsByTrain = new Map();
+  for (const stop of records.stops) {
+    const number = normalizeTrainNumber(stop.train_number);
+    if (!stopsByTrain.has(number)) stopsByTrain.set(number, []);
+    stopsByTrain.get(number).push(stop);
+  }
+
+  const trains = [];
+  const stops = [];
+  const keptStations = new Set();
+  for (const train of records.trains) {
+    co
