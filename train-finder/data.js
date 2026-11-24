@@ -598,4 +598,76 @@ function restrictToMumbaiLocals(records) {
   const stops = [];
   const keptStations = new Set();
   for (const train of records.trains) {
-    co
+    const number = normalizeTrainNumber(train.number);
+    if (!LOCAL_TRAIN_TYPES.has(String(train.type ?? "").trim())) continue;
+    const route = (stopsByTrain.get(number) || [])
+      .slice()
+      .sort((a, b) => Number(a.seq) - Number(b.seq));
+    const inside = route.map(stop => inMumbaiRegion(stationByCode.get(normalizeCode(stop.station_code))));
+    const first = inside.indexOf(true);
+    const last = inside.lastIndexOf(true);
+    if (first === -1 || first === last) continue;
+
+    const kept = [];
+    for (let index = first; index <= last; index++) {
+      const station = stationByCode.get(normalizeCode(route[index].station_code));
+      const noCoordinates = !station || station.lat === null || station.lon === null;
+      if (inside[index] || noCoordinates) kept.push(route[index]);
+    }
+    if (kept.length < 2) continue;
+
+    const head = kept[0];
+    const tail = kept[kept.length - 1];
+    trains.push({
+      ...train,
+      source_code: head.station_code,
+      source: head.station_name,
+      dest_code: tail.station_code,
+      destination: tail.station_name,
+      num_stops: String(kept.length)
+    });
+    for (const stop of kept) {
+      stops.push(stop);
+      keptStations.add(normalizeCode(stop.station_code));
+    }
+  }
+
+  return {
+    ...records,
+    trains,
+    stops,
+    stations: records.stations.filter(station => keptStations.has(normalizeCode(station.code)))
+  };
+}
+
+function loadData(dataDir = DATA_DIR, options = {}) {
+  const parserResults = {};
+  const records = {};
+  for (const [name, schema] of Object.entries(SCHEMAS)) {
+    const useEnrichedStations = name === "stations" &&
+      dataDir === DATA_DIR &&
+      fs.existsSync(path.join(ENRICHED_DATA_DIR, ENRICHED_STATIONS_FILE));
+    const file = useEnrichedStations
+      ? readCSV(ENRICHED_DATA_DIR, ENRICHED_STATIONS_FILE, schema)
+      : readCSV(dataDir, `${name}.csv`, schema);
+    records[name] = file.records;
+    parserResults[name] = file.malformedRows;
+  }
+  if (dataDir === DATA_DIR) {
+    records.stations = withMumbaiStationCoordinates(records.stations);
+  }
+  const restrict = options.mumbaiLocalsOnly ??
+    (dataDir === DATA_DIR && process.env.TRAIN_FINDER_FULL_NETWORK !== "1");
+  return createDataLayer(restrict ? restrictToMumbaiLocals(records) : records, parserResults);
+}
+
+module.exports = {
+  DATA_DIR,
+  createDataLayer,
+  loadData,
+  restrictToMumbaiLocals,
+  normalizeCode,
+  normalizeTrainNumber,
+  timeToMinutes,
+  getStopTime
+};
