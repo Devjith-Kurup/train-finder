@@ -608,4 +608,26 @@ function createRequestHandler(data = loadData()) {
 }
 
 function createApiServer(options = {}) {
-  const data = options.data
+  const data = options.data || loadData();
+  return http.createServer(createRequestHandler(data));
+}
+
+if (require.main === module) {
+  const port = Number(process.env.PORT || DEFAULT_PORT);
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
+    throw new RangeError("PORT must be an integer from 0 to 65535");
+  }
+  const host = process.env.HOST || DEFAULT_HOST;
+  const server = createApiServer();
+  server.listen(port, host, () => {
+    const address = server.address();
+    console.log(`Train Finder API listening at http://${host}:${address.port}`);
+  });
+}
+
+module.exports = {
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  createApiServer,
+  createRequestHandler
+};
